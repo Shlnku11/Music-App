@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+.env
+
+# Django
+db.sqlite3
+media/
+staticfiles/
+
+# Migrations (если нужно хранить миграции, не добавляй)
+# */migrations/*
+# !*/migrations/__init__.py
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Docker
+docker_data/
