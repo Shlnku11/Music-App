@@ -179,3 +179,5 @@ EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
 ]
+
+ALLOWED_HOSTS = ['*'] # или ['.onrender.com', 'localhost', '127.0.0.1']А
