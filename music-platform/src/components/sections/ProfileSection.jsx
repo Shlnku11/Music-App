@@ -38,6 +38,11 @@ const ProfileSection = () => {
     return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
   };
 
+  const handleBuyClick = async () => {
+    const success = await createInvoice();
+    setInvoiceSent(success);
+  };
+
   if (!user) {
     return (
       <div className="profile-guest">

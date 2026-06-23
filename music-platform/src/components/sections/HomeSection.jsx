@@ -13,6 +13,7 @@ const HomeSection = () => {
   const [tracks, setTracks] = useState([]);
   const [albums, setAlbums] = useState([]);
   const [recommended, setRecommended] = useState([]);
+  const [premiumTracks, setPremiumTracks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedAlbum, setSelectedAlbum] = useState(null);
@@ -29,17 +30,21 @@ const HomeSection = () => {
         const recentArtist = history[0]?.artist;
         const recQuery = recentArtist ? `${recentArtist} radio` : 'top hits 2026';
 
-        const [tracksRes, albumsRes, recRes] = await Promise.all([
-          fetch(`${API_URL}/search/?q=${encodeURIComponent('top hits 2026')}`),
+        const [tracksRes, albumsRes, recRes, premiumRes] = await Promise.all([
+          fetch(`${API_URL}/search/?q=${encodeURIComponent('billboard hot 100 hits')}`),
           fetch(`${API_URL}/search/albums/?q=${encodeURIComponent('top albums 2026')}`),
           fetch(`${API_URL}/search/?q=${encodeURIComponent(recQuery)}`),
+          fetch(`${API_URL}/search/?q=${encodeURIComponent('most viewed music videos all time')}`),
         ]);
 
-        if (!tracksRes.ok || !albumsRes.ok || !recRes.ok) throw new Error('API error');
+        if (!tracksRes.ok || !albumsRes.ok || !recRes.ok || !premiumRes.ok) throw new Error('API error');
 
         setTracks((await tracksRes.json()).results || []);
         setAlbums((await albumsRes.json()).results || []);
         setRecommended((await recRes.json()).results || []);
+
+        const premiumData = (await premiumRes.json()).results || [];
+        setPremiumTracks(premiumData.filter((t) => t.is_premium));
       } catch (e) {
         console.error('Failed to load home data', e);
         setError('Не удалось загрузить данные. Проверь, что бэкенд запущен.');
@@ -101,6 +106,23 @@ const HomeSection = () => {
           ))}
         </div>
       </section>
+
+      {premiumTracks.length > 0 && (
+        <section className="home-row">
+          <h2>Премиум</h2>
+          <div className="horizontal-scroll">
+            {premiumTracks.map((track) => (
+              <div className="scroll-item" key={track.external_id}>
+                <TrackCard
+                  track={track}
+                  isActive={currentTrack?.external_id === track.external_id}
+                  onPlay={() => playTrack(track, premiumTracks)}
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 };

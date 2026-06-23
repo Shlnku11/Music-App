@@ -46,7 +46,7 @@ const AlbumView = ({ album, onClose }) => {
       {error && <p className="error">{error}</p>}
 
       {!loading && !error && (
-        <div className="track-list">
+        <div className="track-grid-2col">
           {tracks.map((track) => (
             <TrackCard
               key={track.external_id}
@@ -57,6 +57,7 @@ const AlbumView = ({ album, onClose }) => {
           ))}
         </div>
       )}
+
     </div>
   );
 };

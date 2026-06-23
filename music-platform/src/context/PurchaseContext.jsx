@@ -2,81 +2,51 @@ import { createContext, useContext, useState, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 
 const PurchaseContext = createContext(null);
-
-const STORAGE_KEY = 'eleve_purchased_tracks';
-
-const loadPurchased = () => {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-  } catch {
-    return [];
-  }
-};
+const API_URL = import.meta.env.VITE_API_URL;
 
 export const PurchaseProvider = ({ children }) => {
-  const { isTelegram, user } = useAuth();
-  const [purchasedIds, setPurchasedIds] = useState(loadPurchased);
-  const [pendingTrack, setPendingTrack] = useState(null);
-  const [showBrowserModal, setShowBrowserModal] = useState(false);
+  const { user } = useAuth();
+  const [purchasedIds, setPurchasedIds] = useState([]);
+  const [checkingIds, setCheckingIds] = useState([]);
 
   const isPurchased = useCallback(
     (externalId) => purchasedIds.includes(externalId),
     [purchasedIds]
   );
 
-  const markPurchased = (externalId) => {
-    setPurchasedIds((prev) => {
-      const updated = [...new Set([...prev, externalId])];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
-  };
+  const checkPurchase = useCallback(async (externalId) => {
+    if (!user || checkingIds.includes(externalId)) return;
+    setCheckingIds((prev) => [...prev, externalId]);
+    try {
+      const res = await fetch(`${API_URL}/premium/check-purchase/?user=${user.id}&external_id=${externalId}`);
+      const data = await res.json();
+      if (data.purchased) {
+        setPurchasedIds((prev) => [...new Set([...prev, externalId])]);
+      }
+    } catch (e) {
+      console.error('Failed to check purchase', e);
+    }
+  }, [user, checkingIds]);
 
-  const requestPurchase = useCallback((track) => {
+  const requestPurchase = useCallback(async (track) => {
+    if (!user) return false;
     if (isPurchased(track.external_id)) return true;
 
-    if (isTelegram && window.Telegram?.WebApp?.openInvoice) {
-      setPendingTrack(track);
-      window.Telegram.WebApp.openInvoice(track.invoice_url, (status) => {
-        if (status === 'paid') {
-          markPurchased(track.external_id);
-        }
-        setPendingTrack(null);
+    try {
+      await fetch(`${API_URL}/premium/create-invoice/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: user.id, type: 'track', track }),
       });
       return false;
-    }
-
-    if (!user) {
+    } catch (e) {
+      console.error('Failed to request purchase', e);
       return false;
     }
-
-    setPendingTrack(track);
-    setShowBrowserModal(true);
-    return false;
-  }, [isTelegram, user, isPurchased]);
-
-  const confirmBrowserPurchase = () => {
-    if (pendingTrack) markPurchased(pendingTrack.external_id);
-    setShowBrowserModal(false);
-    setPendingTrack(null);
-  };
-
-  const cancelBrowserPurchase = () => {
-    setShowBrowserModal(false);
-    setPendingTrack(null);
-  };
+  }, [user, isPurchased]);
 
   return (
-    <PurchaseContext.Provider
-      value={{
-        isPurchased,
-        requestPurchase,
-        showBrowserModal,
-        pendingTrack,
-        confirmBrowserPurchase,
-        cancelBrowserPurchase,
-      }}
-    >
+    <PurchaseContext.Provider value={{ isPurchased, requestPurchase, checkPurchase }}>
       {children}
     </PurchaseContext.Provider>
   );

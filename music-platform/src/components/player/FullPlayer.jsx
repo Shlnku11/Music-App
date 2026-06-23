@@ -20,12 +20,6 @@ const FullPlayer = ({ onClose }) => {
 
   const favorited = isFavorite(currentTrack.external_id);
 
-  const handleSeekClick = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = (e.clientX - rect.left) / rect.width;
-    seekTo(ratio * duration);
-  };
-
   const modeIcon = playMode === 'normal' ? <FaArrowRight /> : playMode === 'repeat' ? <FaRedo /> : <FaRandom />;
 
   return (
@@ -46,13 +40,16 @@ const FullPlayer = ({ onClose }) => {
         <button onClick={() => openAddToPlaylist(currentTrack)}><FaPlus /> Плейлист</button>
       </div>
 
-      <div className="full-player-progress" onClick={handleSeekClick}>
-        <div className="full-player-progress-fill" style={{ width: `${progressPercent}%` }} />
-      </div>
-      <div className="full-player-time">
-        <span>{formatTime(currentTime)}</span>
-        <span>{formatTime(duration)}</span>
-      </div>
+
+      <input
+        type="range"
+        min={0}
+        max={duration || 0}
+        value={currentTime}
+        onChange={(e) => seekTo(Number(e.target.value))}
+        className="full-player-slider"
+      />
+
 
       <div className="full-player-controls">
         <button onClick={togglePlayMode} className={`mode-btn ${playMode}`}>{modeIcon}</button>
