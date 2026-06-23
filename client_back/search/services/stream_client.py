@@ -9,6 +9,7 @@ def get_audio_stream_url(video_id: str):
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
+        'cookiefile': 'cookies.txt',
         'extractor_args': {
             'youtube': {
                 'player_client': ['android', 'web'],
