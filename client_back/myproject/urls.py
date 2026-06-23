@@ -27,4 +27,5 @@ urlpatterns = [
     path('api/playlists/', include('main.urls_playlists')),
     path('api/history/', include('main.urls_history')),
     path('api/premium/', include('main.urls_premium')),
+    path('api/download/', include('main.urls_download')),
 ]

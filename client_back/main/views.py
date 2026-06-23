@@ -5,8 +5,10 @@ from .models import User, Music, Favorite, Playlist, PlaylistMusic, ListenHistor
 from .serializers import UserSerializer
 from datetime import timedelta
 from django.utils import timezone
-from .models import PremiumAccess
+from .models import PremiumAccess, TrackPurchase
 import requests as http_requests
+import os as os_module
+from search.services.download_client import download_audio_file
 
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
@@ -340,6 +342,9 @@ class RevokePremiumBulkView(APIView):
 class CreateInvoiceView(APIView):
     def post(self, request):
         user_id = request.data.get('user')
+        purchase_type = request.data.get('type', 'subscription')
+        track = request.data.get('track')
+
         if not user_id:
             return Response({"error": "user обязателен"}, status=400)
 
@@ -347,13 +352,27 @@ class CreateInvoiceView(APIView):
         if not user or not user.telegram_id:
             return Response({"error": "У пользователя нет привязанного Telegram"}, status=400)
 
+        if purchase_type == 'track':
+            if not track or not track.get('external_id'):
+                return Response({"error": "track обязателен"}, status=400)
+
+            payload = f"track:{user.id}:{track['external_id']}:{track.get('title','')}:{track.get('artist','')}:{track.get('thumbnail_url','')}:{track.get('duration_seconds',0)}"
+            title = f"{track.get('title', 'Трек')}"
+            description = f"Покупка трека: {track.get('artist', '')}"
+            amount = track.get('price', 1)
+        else:
+            payload = f"sub:{user.id}"
+            title = "Premium на 30 дней"
+            description = "Доступ ко всем платным трекам на месяц"
+            amount = 100
+
         resp = http_requests.post(f"{TELEGRAM_API_URL}/sendInvoice", data={
             "chat_id": user.telegram_id,
-            "title": "Premium на 30 дней",
-            "description": "Доступ ко всем платным трекам на месяц",
-            "payload": str(user.id),
+            "title": title,
+            "description": description,
+            "payload": payload,
             "currency": "XTR",
-            "prices": '[{"label":"Premium 30 дней","amount":100}]',
+            "prices": f'[{{"label":"{title}","amount":{amount}}}]',
         })
 
         if resp.status_code != 200:
@@ -368,3 +387,52 @@ class ClearHistoryView(APIView):
             return Response({"error": "user обязателен"}, status=400)
         ListenHistory.objects.filter(user_id=user_id).delete()
         return Response({"cleared": True})
+    
+class CheckTrackPurchaseView(APIView):
+    def get(self, request):
+        user_id = request.query_params.get('user')
+        external_id = request.query_params.get('external_id')
+        if not user_id or not external_id:
+            return Response({"purchased": False})
+
+        exists = TrackPurchase.objects.filter(
+            user_id=user_id,
+            music__external_id=external_id,
+        ).exists()
+
+        return Response({"purchased": exists})
+
+class DownloadTrackView(APIView):
+    def post(self, request):
+        user_id = request.data.get('user')
+        track = request.data.get('track', {})
+        external_id = track.get('external_id')
+
+        if not user_id or not external_id:
+            return Response({"error": "user и track.external_id обязательны"}, status=400)
+
+        user = User.objects.filter(id=user_id).first()
+        if not user or not user.telegram_id:
+            return Response({"error": "Нет привязанного Telegram"}, status=400)
+
+        try:
+            filepath, title = download_audio_file(external_id)
+        except Exception as e:
+            return Response({"error": f"Ошибка скачивания: {str(e)}"}, status=502)
+
+        try:
+            with open(filepath, 'rb') as f:
+                http_requests.post(
+                    f"{TELEGRAM_API_URL}/sendAudio",
+                    data={
+                        "chat_id": user.telegram_id,
+                        "title": track.get('title', title),
+                        "performer": track.get('artist', ''),
+                    },
+                    files={"audio": f},
+                )
+        finally:
+            if os_module.path.exists(filepath):
+                os_module.remove(filepath)
+
+        return Response({"sent": True})

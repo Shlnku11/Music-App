@@ -1,5 +1,9 @@
 from django.urls import path
-from .views import GrantPremiumView, PremiumStatusView, SubscribePremiumView, AdminPremiumListView, RevokePremiumBulkView, CreateInvoiceView
+from .views import (
+    GrantPremiumView, PremiumStatusView, SubscribePremiumView,
+    AdminPremiumListView, RevokePremiumBulkView, CreateInvoiceView,
+    CheckTrackPurchaseView,
+)
 
 urlpatterns = [
     path('grant/', GrantPremiumView.as_view(), name='premium-grant'),
@@ -8,4 +12,5 @@ urlpatterns = [
     path('admin-list/', AdminPremiumListView.as_view(), name='premium-admin-list'),
     path('revoke-bulk/', RevokePremiumBulkView.as_view(), name='premium-revoke-bulk'),
     path('create-invoice/', CreateInvoiceView.as_view(), name='premium-create-invoice'),
+    path('check-purchase/', CheckTrackPurchaseView.as_view(), name='premium-check-purchase'),
 ]

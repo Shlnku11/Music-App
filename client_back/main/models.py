@@ -124,3 +124,11 @@ class PremiumAccess(models.Model):
             return False
         from django.utils import timezone
         return self.expires_at > timezone.now()
+    
+class TrackPurchase(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='purchases')
+    music = models.ForeignKey(Music, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'music')

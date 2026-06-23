@@ -43,22 +43,46 @@ class Command(BaseCommand):
 
                     if "successful_payment" in message:
                         payload = message["successful_payment"]["invoice_payload"]
-                        user = User.objects.filter(id=int(payload)).first()
-                        if user:
-                            access = PremiumAccess.objects.filter(user=user).first()
-                            base_time = timezone.now()
-                            if access and access.expires_at and access.expires_at > base_time:
-                                base_time = access.expires_at
-                            new_expiry = base_time + timedelta(days=30)
-                            PremiumAccess.objects.update_or_create(
-                                user=user,
-                                defaults={'granted_by_admin': False, 'expires_at': new_expiry},
-                            )
-                            requests.post(f"{API_URL}/sendMessage", data={
-                                "chat_id": message["from"]["id"],
-                                "text": "Оплата прошла успешно! Premium активирован на 30 дней.",
-                            })
+                        parts = payload.split(":")
+
+                        if parts[0] == "sub":
+                            user = User.objects.filter(id=int(parts[1])).first()
+                            if user:
+                                access = PremiumAccess.objects.filter(user=user).first()
+                                base_time = timezone.now()
+                                if access and access.expires_at and access.expires_at > base_time:
+                                    base_time = access.expires_at
+                                new_expiry = base_time + timedelta(days=30)
+                                PremiumAccess.objects.update_or_create(
+                                    user=user,
+                                    defaults={'granted_by_admin': False, 'expires_at': new_expiry},
+                                )
+                                requests.post(f"{API_URL}/sendMessage", data={
+                                    "chat_id": message["from"]["id"],
+                                    "text": "Оплата прошла успешно! Premium активирован на 30 дней.",
+                                })
+
+                        elif parts[0] == "track":
+                            from main.models import Music, TrackPurchase
+                            user = User.objects.filter(id=int(parts[1])).first()
+                            if user:
+                                music, _ = Music.objects.get_or_create(
+                                    source='youtube',
+                                    external_id=parts[2],
+                                    defaults={
+                                        'title': parts[3] if len(parts) > 3 else '',
+                                        'artist': parts[4] if len(parts) > 4 else '',
+                                        'thumbnail_url': parts[5] if len(parts) > 5 else None,
+                                        'duration_seconds': int(parts[6]) if len(parts) > 6 and parts[6].isdigit() else None,
+                                    },
+                                )
+                                TrackPurchase.objects.get_or_create(user=user, music=music)
+                                requests.post(f"{API_URL}/sendMessage", data={
+                                    "chat_id": message["from"]["id"],
+                                    "text": f"Трек '{music.title}' куплен и разблокирован!",
+                                })
                         continue
+
 
                     text = message.get("text", "")
                     chat_id = message["from"]["id"]
