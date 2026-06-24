@@ -2,7 +2,7 @@ import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
-from django.contrib.auth.models import User
+
 
 class User(AbstractUser):
     telegram_id = models.BigIntegerField(unique=True, null=True, blank=True)
@@ -98,20 +98,14 @@ class ListenHistory(models.Model):
         verbose_name_plural = "История прослушиваний"
 
 
-
-class LoginSession(models.Model):
-    session_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    telegram_id = models.BigIntegerField(null=True, blank=True)
-    status = models.CharField(max_length=20, default='pending')
-    created_at = models.DateTimeField(auto_now_add=True)
-
 class LoginSession(models.Model):
     session_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     telegram_id = models.BigIntegerField(null=True, blank=True)
     telegram_username = models.CharField(max_length=255, null=True, blank=True)
     status = models.CharField(max_length=20, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
+
 class PremiumAccess(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='premium_access')
     granted_by_admin = models.BooleanField(default=False)
@@ -123,9 +117,13 @@ class PremiumAccess(models.Model):
             return True
         if not self.expires_at:
             return False
-        from django.utils import timezone
         return self.expires_at > timezone.now()
-    
+
+    class Meta:
+        verbose_name = "Премиум доступ"
+        verbose_name_plural = "Премиум доступы"
+
+
 class TrackPurchase(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='purchases')
     music = models.ForeignKey(Music, on_delete=models.CASCADE)
@@ -133,16 +131,5 @@ class TrackPurchase(models.Model):
 
     class Meta:
         unique_together = ('user', 'music')
-        
-class PremiumAccess(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    end_date = models.DateTimeField()
-
-    def is_active(self):
-        return self.end_date > timezone.now()
-
-class TrackPurchase(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    track_id = models.CharField(max_length=255)
-    purchased_at = models.DateTimeField(auto_now_add=True)
-    
+        verbose_name = "Купленный трек"
+        verbose_name_plural = "Купленные треки"

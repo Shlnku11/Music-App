@@ -1,4 +1,5 @@
 import os
+import logging
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from .models import User, Music, Favorite, Playlist, PlaylistMusic, ListenHistory, LoginSession
@@ -10,12 +11,11 @@ import requests as http_requests
 import os as os_module
 from search.services.download_client import download_audio_file
 
+logger = logging.getLogger(__name__)
+
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
-
-
-ADMIN_TELEGRAM_ID = 8412123085
+ADMIN_TELEGRAM_ID = os.getenv('ADMIN_TELEGRAM_ID', '8412123085')
 
 
 class TelegramAuthView(APIView):
@@ -26,12 +26,17 @@ class TelegramAuthView(APIView):
         if not telegram_id:
             return Response({"error": "telegram_id обязателен"}, status=400)
 
-        user, created = User.objects.get_or_create(
-            telegram_id=telegram_id,
-            defaults={'username': username},
-        )
+        try:
+            user, created = User.objects.get_or_create(
+                telegram_id=telegram_id,
+                defaults={'username': username},
+            )
+            logger.info(f"Auth: user={telegram_id}, created={created}")
+            return Response(UserSerializer(user).data)
+        except Exception as e:
+            logger.exception(f"Auth error for telegram_id={telegram_id}")
+            return Response({"error": "Ошибка авторизации"}, status=500)
 
-        return Response(UserSerializer(user).data)
 
 class ToggleFavoriteView(APIView):
     def post(self, request):
@@ -42,25 +47,33 @@ class ToggleFavoriteView(APIView):
         if not user_id or not external_id:
             return Response({"error": "user и track.external_id обязательны"}, status=400)
 
-        music, _ = Music.objects.get_or_create(
-            source='youtube',
-            external_id=external_id,
-            defaults={
-                'title': track.get('title', ''),
-                'artist': track.get('artist', ''),
-                'thumbnail_url': track.get('thumbnail_url'),
-                'duration_seconds': track.get('duration_seconds'),
-            },
-        )
+        try:
+            user = User.objects.filter(id=user_id).first()
+            if not user:
+                return Response({"error": "Пользователь не найден"}, status=404)
 
-        favorite = Favorite.objects.filter(user_id=user_id, music=music).first()
+            music, _ = Music.objects.get_or_create(
+                source='youtube',
+                external_id=external_id,
+                defaults={
+                    'title': track.get('title', ''),
+                    'artist': track.get('artist', ''),
+                    'thumbnail_url': track.get('thumbnail_url'),
+                    'duration_seconds': track.get('duration_seconds'),
+                },
+            )
 
-        if favorite:
-            favorite.delete()
-            return Response({"favorited": False})
+            favorite = Favorite.objects.filter(user_id=user_id, music=music).first()
 
-        Favorite.objects.create(user_id=user_id, music=music)
-        return Response({"favorited": True})
+            if favorite:
+                favorite.delete()
+                return Response({"favorited": False})
+
+            Favorite.objects.create(user_id=user_id, music=music)
+            return Response({"favorited": True})
+        except Exception as e:
+            logger.exception(f"ToggleFavorite error: user={user_id}, track={external_id}")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
 
 
 class FavoriteListView(APIView):
@@ -69,21 +82,23 @@ class FavoriteListView(APIView):
         if not user_id:
             return Response({"error": "user обязателен"}, status=400)
 
-        favorites = Favorite.objects.filter(user_id=user_id).select_related('music')
-        results = [
-            {
-                "favorite_id": f.id,
-                "external_id": f.music.external_id,
-                "title": f.music.title,
-                "artist": f.music.artist,
-                "thumbnail_url": f.music.thumbnail_url,
-                "duration_seconds": f.music.duration_seconds,
-            }
-            for f in favorites
-        ]
-        return Response({"results": results})
-
-        from .models import Playlist, PlaylistMusic, ListenHistory
+        try:
+            favorites = Favorite.objects.filter(user_id=user_id).select_related('music')
+            results = [
+                {
+                    "favorite_id": f.id,
+                    "external_id": f.music.external_id,
+                    "title": f.music.title,
+                    "artist": f.music.artist,
+                    "thumbnail_url": f.music.thumbnail_url,
+                    "duration_seconds": f.music.duration_seconds,
+                }
+                for f in favorites
+            ]
+            return Response({"results": results})
+        except Exception as e:
+            logger.exception(f"FavoriteList error: user={user_id}")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
 
 
 def get_or_create_music(track):
@@ -106,12 +121,16 @@ class PlaylistListCreateView(APIView):
         if not user_id:
             return Response({"error": "user обязателен"}, status=400)
 
-        playlists = Playlist.objects.filter(user_id=user_id)
-        results = [
-            {"id": p.id, "name": p.name, "track_count": p.tracks.count()}
-            for p in playlists
-        ]
-        return Response({"results": results})
+        try:
+            playlists = Playlist.objects.filter(user_id=user_id)
+            results = [
+                {"id": p.id, "name": p.name, "track_count": p.tracks.count()}
+                for p in playlists
+            ]
+            return Response({"results": results})
+        except Exception as e:
+            logger.exception(f"PlaylistList error: user={user_id}")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
 
     def post(self, request):
         user_id = request.data.get('user')
@@ -120,25 +139,33 @@ class PlaylistListCreateView(APIView):
         if not user_id or not name:
             return Response({"error": "user и name обязательны"}, status=400)
 
-        playlist = Playlist.objects.create(user_id=user_id, name=name)
-        return Response({"id": playlist.id, "name": playlist.name, "track_count": 0})
+        try:
+            playlist = Playlist.objects.create(user_id=user_id, name=name)
+            return Response({"id": playlist.id, "name": playlist.name, "track_count": 0})
+        except Exception as e:
+            logger.exception(f"PlaylistCreate error: user={user_id}")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
 
 
 class PlaylistDetailView(APIView):
     def get(self, request, playlist_id):
-        tracks = PlaylistMusic.objects.filter(playlist_id=playlist_id).select_related('music')
-        results = [
-            {
-                "playlist_music_id": pm.id,
-                "external_id": pm.music.external_id,
-                "title": pm.music.title,
-                "artist": pm.music.artist,
-                "thumbnail_url": pm.music.thumbnail_url,
-                "duration_seconds": pm.music.duration_seconds,
-            }
-            for pm in tracks
-        ]
-        return Response({"results": results})
+        try:
+            tracks = PlaylistMusic.objects.filter(playlist_id=playlist_id).select_related('music')
+            results = [
+                {
+                    "playlist_music_id": pm.id,
+                    "external_id": pm.music.external_id,
+                    "title": pm.music.title,
+                    "artist": pm.music.artist,
+                    "thumbnail_url": pm.music.thumbnail_url,
+                    "duration_seconds": pm.music.duration_seconds,
+                }
+                for pm in tracks
+            ]
+            return Response({"results": results})
+        except Exception as e:
+            logger.exception(f"PlaylistDetail error: playlist={playlist_id}")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
 
     def delete(self, request, playlist_id):
         Playlist.objects.filter(id=playlist_id).delete()
@@ -151,13 +178,15 @@ class PlaylistAddTrackView(APIView):
         if not track.get('external_id'):
             return Response({"error": "track.external_id обязателен"}, status=400)
 
-        music = get_or_create_music(track)
-
-        exists = PlaylistMusic.objects.filter(playlist_id=playlist_id, music=music).exists()
-        if not exists:
-            PlaylistMusic.objects.create(playlist_id=playlist_id, music=music)
-
-        return Response({"added": True})
+        try:
+            music = get_or_create_music(track)
+            exists = PlaylistMusic.objects.filter(playlist_id=playlist_id, music=music).exists()
+            if not exists:
+                PlaylistMusic.objects.create(playlist_id=playlist_id, music=music)
+            return Response({"added": True})
+        except Exception as e:
+            logger.exception(f"PlaylistAddTrack error: playlist={playlist_id}")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
 
 
 class PlaylistRemoveTrackView(APIView):
@@ -176,22 +205,26 @@ class HistoryView(APIView):
         if not user_id:
             return Response({"error": "user обязателен"}, status=400)
 
-        history = ListenHistory.objects.filter(user_id=user_id).select_related('music').order_by('-listened_at')[:50]
-        seen = set()
-        results = []
-        for h in history:
-            if h.music.external_id in seen:
-                continue
-            seen.add(h.music.external_id)
-            results.append({
-                "external_id": h.music.external_id,
-                "title": h.music.title,
-                "artist": h.music.artist,
-                "thumbnail_url": h.music.thumbnail_url,
-                "duration_seconds": h.music.duration_seconds,
-                "listened_at": h.listened_at,
-            })
-        return Response({"results": results})
+        try:
+            history = ListenHistory.objects.filter(user_id=user_id).select_related('music').order_by('-listened_at')[:50]
+            seen = set()
+            results = []
+            for h in history:
+                if h.music.external_id in seen:
+                    continue
+                seen.add(h.music.external_id)
+                results.append({
+                    "external_id": h.music.external_id,
+                    "title": h.music.title,
+                    "artist": h.music.artist,
+                    "thumbnail_url": h.music.thumbnail_url,
+                    "duration_seconds": h.music.duration_seconds,
+                    "listened_at": h.listened_at,
+                })
+            return Response({"results": results})
+        except Exception as e:
+            logger.exception(f"History GET error: user={user_id}")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
 
     def post(self, request):
         user_id = request.data.get('user')
@@ -200,44 +233,54 @@ class HistoryView(APIView):
         if not user_id or not track.get('external_id'):
             return Response({"error": "user и track.external_id обязательны"}, status=400)
 
-        music = get_or_create_music(track)
-        ListenHistory.objects.create(user_id=user_id, music=music)
-        return Response({"added": True})
-
-from .models import LoginSession
+        try:
+            music = get_or_create_music(track)
+            ListenHistory.objects.create(user_id=user_id, music=music)
+            return Response({"added": True})
+        except Exception as e:
+            logger.exception(f"History POST error: user={user_id}")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
 
 
 class StartBrowserLoginView(APIView):
     def post(self, request):
-        session = LoginSession.objects.create()
-        bot_username = os.getenv('TELEGRAM_BOT_USERNAME', 'EleveMusicBot')
-        bot_link = f"https://t.me/{bot_username}?start={session.session_token}"
-        return Response({
-            "session_token": str(session.session_token),
-            "bot_link": bot_link,
-        })
+        try:
+            session = LoginSession.objects.create()
+            bot_username = os.getenv('TELEGRAM_BOT_USERNAME', 'EleveMusicBot')
+            bot_link = f"https://t.me/{bot_username}?start={session.session_token}"
+            return Response({
+                "session_token": str(session.session_token),
+                "bot_link": bot_link,
+            })
+        except Exception as e:
+            logger.exception("StartBrowserLogin error")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
 
 
 class CheckBrowserLoginView(APIView):
     def get(self, request, token):
-        session = LoginSession.objects.filter(session_token=token).first()
+        try:
+            session = LoginSession.objects.filter(session_token=token).first()
 
-        if not session:
-            return Response({"error": "Сессия не найдена"}, status=404)
+            if not session:
+                return Response({"error": "Сессия не найдена"}, status=404)
 
-        if session.status != 'confirmed' or not session.telegram_id:
-            return Response({"status": "pending"})
+            if session.status != 'confirmed' or not session.telegram_id:
+                return Response({"status": "pending"})
 
-        user, created = User.objects.get_or_create(
-            telegram_id=session.telegram_id,
-            defaults={'username': session.telegram_username or f'user_{session.telegram_id}'},
-        )
+            user, created = User.objects.get_or_create(
+                telegram_id=session.telegram_id,
+                defaults={'username': session.telegram_username or f'user_{session.telegram_id}'},
+            )
 
-        return Response({
-            "status": "confirmed",
-            "user": UserSerializer(user).data,
-        })
-        
+            return Response({
+                "status": "confirmed",
+                "user": UserSerializer(user).data,
+            })
+        except Exception as e:
+            logger.exception(f"CheckBrowserLogin error: token={token}")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
+
 
 class GrantPremiumView(APIView):
     def post(self, request):
@@ -249,16 +292,20 @@ class GrantPremiumView(APIView):
         if not target_username:
             return Response({"error": "username обязателен"}, status=400)
 
-        target_user = User.objects.filter(username__iexact=target_username.strip()).first()
-        if not target_user:
-            return Response({"error": "Пользователь не найден"}, status=404)
+        try:
+            target_user = User.objects.filter(username__iexact=target_username).first()
+            if not target_user:
+                return Response({"error": "Пользователь не найден"}, status=404)
 
-        access, _ = PremiumAccess.objects.update_or_create(
-            user=target_user,
-            defaults={'granted_by_admin': True, 'expires_at': None},
-        )
-
-        return Response({"granted": True, "username": target_user.username})
+            access, _ = PremiumAccess.objects.update_or_create(
+                user=target_user,
+                defaults={'granted_by_admin': True, 'expires_at': None},
+            )
+            logger.info(f"Premium granted to {target_user.username} by admin {admin_telegram_id}")
+            return Response({"granted": True, "username": target_user.username})
+        except Exception as e:
+            logger.exception(f"GrantPremium error: target={target_username}")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
 
 
 class PremiumStatusView(APIView):
@@ -267,16 +314,20 @@ class PremiumStatusView(APIView):
         if not user_id:
             return Response({"error": "user обязателен"}, status=400)
 
-        access = PremiumAccess.objects.filter(user_id=user_id).first()
+        try:
+            access = PremiumAccess.objects.filter(user_id=user_id).first()
 
-        if not access or not access.is_active():
-            return Response({"active": False})
+            if not access or not access.is_active():
+                return Response({"active": False})
 
-        return Response({
-            "active": True,
-            "granted_by_admin": access.granted_by_admin,
-            "expires_at": access.expires_at,
-        })
+            return Response({
+                "active": True,
+                "granted_by_admin": access.granted_by_admin,
+                "expires_at": access.expires_at,
+            })
+        except Exception as e:
+            logger.exception(f"PremiumStatus error: user={user_id}")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
 
 
 class SubscribePremiumView(APIView):
@@ -285,47 +336,56 @@ class SubscribePremiumView(APIView):
         if not user_id:
             return Response({"error": "user обязателен"}, status=400)
 
-        user = User.objects.filter(id=user_id).first()
-        if not user:
-            return Response({"error": "Пользователь не найден"}, status=404)
+        try:
+            user = User.objects.filter(id=user_id).first()
+            if not user:
+                return Response({"error": "Пользователь не найден"}, status=404)
 
-        access = PremiumAccess.objects.filter(user=user).first()
+            access = PremiumAccess.objects.filter(user=user).first()
 
-        base_time = timezone.now()
-        if access and access.expires_at and access.expires_at > base_time:
-            base_time = access.expires_at
+            base_time = timezone.now()
+            if access and access.expires_at and access.expires_at > base_time:
+                base_time = access.expires_at
 
-        new_expiry = base_time + timedelta(days=30)
+            new_expiry = base_time + timedelta(days=30)
 
-        access, _ = PremiumAccess.objects.update_or_create(
-            user=user,
-            defaults={'granted_by_admin': False, 'expires_at': new_expiry},
-        )
+            access, _ = PremiumAccess.objects.update_or_create(
+                user=user,
+                defaults={'granted_by_admin': False, 'expires_at': new_expiry},
+            )
 
-        return Response({"active": True, "expires_at": access.expires_at})
-    
+            return Response({"active": True, "expires_at": access.expires_at})
+        except Exception as e:
+            logger.exception(f"SubscribePremium error: user={user_id}")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
+
+
 class AdminPremiumListView(APIView):
     def get(self, request):
         admin_telegram_id = request.query_params.get('admin_telegram_id')
         if str(admin_telegram_id) != str(ADMIN_TELEGRAM_ID):
             return Response({"error": "Нет прав"}, status=403)
 
-        permanent = PremiumAccess.objects.filter(granted_by_admin=True).select_related('user')
-        temporary = PremiumAccess.objects.filter(
-            granted_by_admin=False,
-            expires_at__gt=timezone.now(),
-        ).select_related('user').order_by('expires_at')
+        try:
+            permanent = PremiumAccess.objects.filter(granted_by_admin=True).select_related('user')
+            temporary = PremiumAccess.objects.filter(
+                granted_by_admin=False,
+                expires_at__gt=timezone.now(),
+            ).select_related('user').order_by('expires_at')
 
-        return Response({
-            "permanent": [
-                {"id": a.user.id, "username": a.user.username}
-                for a in permanent
-            ],
-            "temporary": [
-                {"id": a.user.id, "username": a.user.username, "expires_at": a.expires_at}
-                for a in temporary
-            ],
-        })
+            return Response({
+                "permanent": [
+                    {"id": a.user.id, "username": a.user.username}
+                    for a in permanent
+                ],
+                "temporary": [
+                    {"id": a.user.id, "username": a.user.username, "expires_at": a.expires_at}
+                    for a in temporary
+                ],
+            })
+        except Exception as e:
+            logger.exception("AdminPremiumList error")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
 
 
 class RevokePremiumBulkView(APIView):
@@ -338,7 +398,8 @@ class RevokePremiumBulkView(APIView):
         PremiumAccess.objects.filter(user_id__in=user_ids, granted_by_admin=True).delete()
 
         return Response({"revoked": True, "count": len(user_ids)})
-    
+
+
 class CreateInvoiceView(APIView):
     def post(self, request):
         user_id = request.data.get('user')
@@ -348,40 +409,45 @@ class CreateInvoiceView(APIView):
         if not user_id:
             return Response({"error": "user обязателен"}, status=400)
 
-        user = User.objects.filter(id=user_id).first()
-        if not user or not user.telegram_id:
-            return Response({"error": "У пользователя нет привязанного Telegram"}, status=400)
+        try:
+            user = User.objects.filter(id=user_id).first()
+            if not user or not user.telegram_id:
+                return Response({"error": "У пользователя нет привязанного Telegram"}, status=400)
 
-        if purchase_type in ('track', 'download'):
-            if not track or not track.get('external_id'):
-                return Response({"error": "track обязателен"}, status=400)
+            if purchase_type in ('track', 'download'):
+                if not track or not track.get('external_id'):
+                    return Response({"error": "track обязателен"}, status=400)
 
-            action_word = "Скачивание" if purchase_type == 'download' else track.get('title', 'Трек')
-            payload = f"{purchase_type}:{user.id}:{track['external_id']}:{track.get('title','')}:{track.get('artist','')}:{track.get('thumbnail_url','')}:{track.get('duration_seconds',0)}"
-            title = action_word
-            description = f"{'Скачивание трека' if purchase_type == 'download' else 'Покупка трека'}: {track.get('artist', '')}"
-            amount = 1
+                action_word = "Скачивание" if purchase_type == 'download' else track.get('title', 'Трек')
+                payload = f"{purchase_type}:{user.id}:{track['external_id']}:{track.get('title','')}:{track.get('artist','')}:{track.get('thumbnail_url','')}:{track.get('duration_seconds',0)}"
+                title = action_word
+                description = f"{'Скачивание трека' if purchase_type == 'download' else 'Покупка трека'}: {track.get('artist', '')}"
+                amount = 1
+            else:
+                payload = f"sub:{user.id}"
+                title = "Premium на 30 дней"
+                description = "Доступ ко всем платным трекам на месяц"
+                amount = 100
 
-        else:
-            payload = f"sub:{user.id}"
-            title = "Premium на 30 дней"
-            description = "Доступ ко всем платным трекам на месяц"
-            amount = 100
+            resp = http_requests.post(f"{TELEGRAM_API_URL}/sendInvoice", data={
+                "chat_id": user.telegram_id,
+                "title": title,
+                "description": description,
+                "payload": payload,
+                "currency": "XTR",
+                "prices": f'[{{"label":"{title}","amount":{amount}}}]',
+            })
 
-        resp = http_requests.post(f"{TELEGRAM_API_URL}/sendInvoice", data={
-            "chat_id": user.telegram_id,
-            "title": title,
-            "description": description,
-            "payload": payload,
-            "currency": "XTR",
-            "prices": f'[{{"label":"{title}","amount":{amount}}}]',
-        })
+            if resp.status_code != 200:
+                logger.error(f"Invoice error: {resp.text}")
+                return Response({"error": "Не удалось отправить инвойс", "details": resp.text}, status=502)
 
-        if resp.status_code != 200:
-            return Response({"error": "Не удалось отправить инвойс", "details": resp.text}, status=502)
+            return Response({"sent": True})
+        except Exception as e:
+            logger.exception(f"CreateInvoice error: user={user_id}")
+            return Response({"error": "Внутренняя ошибка"}, status=500)
 
-        return Response({"sent": True})
-    
+
 class ClearHistoryView(APIView):
     def post(self, request):
         user_id = request.data.get('user')
@@ -389,7 +455,8 @@ class ClearHistoryView(APIView):
             return Response({"error": "user обязателен"}, status=400)
         ListenHistory.objects.filter(user_id=user_id).delete()
         return Response({"cleared": True})
-    
+
+
 class CheckTrackPurchaseView(APIView):
     def get(self, request):
         user_id = request.query_params.get('user')
@@ -404,6 +471,7 @@ class CheckTrackPurchaseView(APIView):
 
         return Response({"purchased": exists})
 
+
 class DownloadTrackView(APIView):
     def post(self, request):
         user_id = request.data.get('user')
@@ -413,28 +481,29 @@ class DownloadTrackView(APIView):
         if not user_id or not external_id:
             return Response({"error": "user и track.external_id обязательны"}, status=400)
 
-        user = User.objects.filter(id=user_id).first()
-        if not user or not user.telegram_id:
-            return Response({"error": "Нет привязанного Telegram"}, status=400)
-
         try:
+            user = User.objects.filter(id=user_id).first()
+            if not user or not user.telegram_id:
+                return Response({"error": "Нет привязанного Telegram"}, status=400)
+
             filepath, title = download_audio_file(external_id)
+
+            try:
+                with open(filepath, 'rb') as f:
+                    http_requests.post(
+                        f"{TELEGRAM_API_URL}/sendAudio",
+                        data={
+                            "chat_id": user.telegram_id,
+                            "title": track.get('title', title),
+                            "performer": track.get('artist', ''),
+                        },
+                        files={"audio": f},
+                    )
+            finally:
+                if os_module.path.exists(filepath):
+                    os_module.remove(filepath)
+
+            return Response({"sent": True})
         except Exception as e:
-            return Response({"error": f"Ошибка скачивания: {str(e)}"}, status=502)
-
-        try:
-            with open(filepath, 'rb') as f:
-                http_requests.post(
-                    f"{TELEGRAM_API_URL}/sendAudio",
-                    data={
-                        "chat_id": user.telegram_id,
-                        "title": track.get('title', title),
-                        "performer": track.get('artist', ''),
-                    },
-                    files={"audio": f},
-                )
-        finally:
-            if os_module.path.exists(filepath):
-                os_module.remove(filepath)
-
-        return Response({"sent": True})
+            logger.exception(f"DownloadTrack error: user={user_id}, track={external_id}")
+            return Response({"error": f"Ошибка: {str(e)}"}, status=502)

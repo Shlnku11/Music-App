@@ -1,8 +1,11 @@
+import logging
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .services.ytmusic_client import search_tracks, enrich_with_view_counts, search_albums, get_album_tracks
 from .services.stream_client import get_audio_stream_url
+
+logger = logging.getLogger(__name__)
 
 
 class SearchView(APIView):
@@ -16,10 +19,13 @@ class SearchView(APIView):
             results = search_tracks(query)
             results = enrich_with_view_counts(results)
         except Exception as e:
-            return Response({"error": f"Ошибка поиска: {str(e)}"}, status=status.HTTP_502_BAD_GATEWAY)
+            logger.exception(f"Search error: query={query!r}")
+            # Возвращаем пустой список вместо 500 — сайт не ломается
+            return Response({"results": [], "warning": "Поиск временно недоступен"}, status=200)
 
         return Response({"results": results})
-    
+
+
 class SearchAlbumsView(APIView):
     def get(self, request):
         query = request.query_params.get('q', '').strip()
@@ -29,7 +35,8 @@ class SearchAlbumsView(APIView):
         try:
             results = search_albums(query)
         except Exception as e:
-            return Response({"error": f"Ошибка поиска: {str(e)}"}, status=502)
+            logger.exception(f"SearchAlbums error: query={query!r}")
+            return Response({"results": [], "warning": "Поиск альбомов временно недоступен"}, status=200)
 
         return Response({"results": results})
 
@@ -40,15 +47,18 @@ class AlbumTracksView(APIView):
             results = get_album_tracks(browse_id)
             results = enrich_with_view_counts(results)
         except Exception as e:
-            return Response({"error": f"Ошибка: {str(e)}"}, status=502)
+            logger.exception(f"AlbumTracks error: browse_id={browse_id}")
+            return Response({"error": "Не удалось загрузить треки альбома"}, status=502)
 
         return Response({"results": results})
+
 
 class StreamView(APIView):
     def get(self, request, external_id):
         try:
             data = get_audio_stream_url(external_id)
         except Exception as e:
+            logger.exception(f"Stream error: external_id={external_id}")
             return Response({"error": f"Не удалось получить поток: {str(e)}"}, status=502)
 
         return Response(data)

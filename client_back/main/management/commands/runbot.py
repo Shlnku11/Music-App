@@ -122,7 +122,7 @@ class Command(BaseCommand):
                                 requests.post(f"{API_URL}/sendMessage", data={
                                     "chat_id": chat_id,
                                     "text": "Вход подтверждён! Возвращайся на сайт.",
-                                    "reply_markup": '{"inline_keyboard":[[{"text":"Открыть сайт","url":"http://localhost:5173"}]]}',
+                                    "reply_markup": '{"inline_keyboard":[[{"text":"Открыть сайт","url":"https://shlnku11.github.io/music-platform"}]]}',
                                 })
                             else:
                                 requests.post(f"{API_URL}/sendMessage", data={

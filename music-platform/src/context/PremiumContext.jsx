@@ -3,7 +3,7 @@ import { useAuth } from './AuthContext';
 
 const PremiumContext = createContext(null);
 const API_URL = import.meta.env.VITE_API_URL;
-const ADMIN_TELEGRAM_ID = '8412123085';
+const ADMIN_TELEGRAM_ID = import.meta.env.VITE_ADMIN_TELEGRAM_ID || '8412123085';
 
 export const PremiumProvider = ({ children }) => {
   const { user } = useAuth();
