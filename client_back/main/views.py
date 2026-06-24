@@ -352,14 +352,16 @@ class CreateInvoiceView(APIView):
         if not user or not user.telegram_id:
             return Response({"error": "У пользователя нет привязанного Telegram"}, status=400)
 
-        if purchase_type == 'track':
+        if purchase_type in ('track', 'download'):
             if not track or not track.get('external_id'):
                 return Response({"error": "track обязателен"}, status=400)
 
-            payload = f"track:{user.id}:{track['external_id']}:{track.get('title','')}:{track.get('artist','')}:{track.get('thumbnail_url','')}:{track.get('duration_seconds',0)}"
-            title = f"{track.get('title', 'Трек')}"
-            description = f"Покупка трека: {track.get('artist', '')}"
-            amount = track.get('price', 1)
+            action_word = "Скачивание" if purchase_type == 'download' else track.get('title', 'Трек')
+            payload = f"{purchase_type}:{user.id}:{track['external_id']}:{track.get('title','')}:{track.get('artist','')}:{track.get('thumbnail_url','')}:{track.get('duration_seconds',0)}"
+            title = action_word
+            description = f"{'Скачивание трека' if purchase_type == 'download' else 'Покупка трека'}: {track.get('artist', '')}"
+            amount = 1
+
         else:
             payload = f"sub:{user.id}"
             title = "Premium на 30 дней"

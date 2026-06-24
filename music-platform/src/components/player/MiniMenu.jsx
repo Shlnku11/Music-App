@@ -23,13 +23,13 @@ const MiniMenu = () => {
     if (!user) return;
     setDownloading(true);
     try {
-      await fetch(`${API_URL}/download/`, {
+      await fetch(`${API_URL}/premium/create-invoice/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user: user.id, track: currentTrack }),
+        body: JSON.stringify({ user: user.id, type: 'download', track: currentTrack }),
       });
     } catch (e) {
-      console.error('Download failed', e);
+      console.error('Download invoice failed', e);
     } finally {
       setDownloading(false);
       setOpen(false);

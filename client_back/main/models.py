@@ -1,7 +1,8 @@
 import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractUser
-
+from django.utils import timezone
+from django.contrib.auth.models import User
 
 class User(AbstractUser):
     telegram_id = models.BigIntegerField(unique=True, null=True, blank=True)
@@ -132,3 +133,16 @@ class TrackPurchase(models.Model):
 
     class Meta:
         unique_together = ('user', 'music')
+        
+class PremiumAccess(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    end_date = models.DateTimeField()
+
+    def is_active(self):
+        return self.end_date > timezone.now()
+
+class TrackPurchase(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    track_id = models.CharField(max_length=255)
+    purchased_at = models.DateTimeField(auto_now_add=True)
+    

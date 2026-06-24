@@ -62,7 +62,7 @@ class Command(BaseCommand):
                                     "text": "Оплата прошла успешно! Premium активирован на 30 дней.",
                                 })
 
-                        elif parts[0] == "track":
+                        elif parts[0] in ("track", "download"):
                             from main.models import Music, TrackPurchase
                             user = User.objects.filter(id=int(parts[1])).first()
                             if user:
@@ -77,12 +77,32 @@ class Command(BaseCommand):
                                     },
                                 )
                                 TrackPurchase.objects.get_or_create(user=user, music=music)
-                                requests.post(f"{API_URL}/sendMessage", data={
-                                    "chat_id": message["from"]["id"],
-                                    "text": f"Трек '{music.title}' куплен и разблокирован!",
-                                })
-                        continue
 
+                                # Логика отправки файла, если это был запрос на скачивание
+                                if parts[0] == "download":
+                                    from search.services.download_client import download_audio_file
+                                    import os as os_mod
+                                    try:
+                                        filepath, _ = download_audio_file(parts[2])
+                                        with open(filepath, 'rb') as f:
+                                            requests.post(f"{API_URL}/sendAudio", data={
+                                                "chat_id": message["from"]["id"],
+                                                "title": music.title,
+                                                "performer": music.artist,
+                                            }, files={"audio": f})
+                                        os_mod.remove(filepath)
+                                    except Exception as e:
+                                        requests.post(f"{API_URL}/sendMessage", data={
+                                            "chat_id": message["from"]["id"],
+                                            "text": f"Ошибка скачивания: {str(e)}",
+                                        })
+                                else:
+                                    # Обычная покупка трека в коллекцию без скачивания в чат
+                                    requests.post(f"{API_URL}/sendMessage", data={
+                                        "chat_id": message["from"]["id"],
+                                        "text": f"Трек '{music.title}' куплен и разблокирован!",
+                                    })
+                        continue
 
                     text = message.get("text", "")
                     chat_id = message["from"]["id"]
